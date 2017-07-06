@@ -307,6 +307,86 @@ class ResNet50_Keras_Scratch():
         # LOAD WEIGHTS:
         self.model.load_weights(weight_path)
 
-model=ResNet50_Keras_Scratch()
+# model=ResNet50_Keras_Scratch()
+# model.train()
+# print( class_names[np.argmax(model.model.predict(im))])
+
+def block_bottleneck(input_,filter_list,stride_block=1):
+    filter1,filter2,filter3=filter_list
+    last_dimension=input_.shape[-1]
+    x=Conv2D(filter1,(1,1),(1,1),padding="SAME")(input_)
+    x=BatchNormalization()(x)
+    x=Activation("relu")(x)
+    x=Conv2D(filter2,(3,3),(stride_block,stride_block),padding="SAME")(x)
+    x=BatchNormalization()(x)
+    x=Activation("relu")(x)
+    x=Conv2D(filter3,(1,1),(1,1),padding="SAME")(x)
+    x=BatchNormalization()(x)
+    if last_dimension==filter3:
+        if stride_block==1:
+            shortcut=input_
+        else:
+            shortcut=MaxPool2D((1,1),(stride_block,stride_block),padding="VALID")(input_)
+    else:
+        shortcut=Conv2D(filter3,(1,1),(1,1),padding="SAME")(input_)
+        shortcut=BatchNormalization()(shortcut)
+    x=layers.add([x,shortcut])
+    x=Activation("relu")(x)
+    return x
+
+def residual_layer(input_,stride_last_layer,filter_list,num_blocks):
+    x= block_bottleneck(input_,filter_list)
+    for i in range(num_blocks-1):
+        if i ==num_blocks-2:
+            x=block_bottleneck(x,filter_list,stride_last_layer)
+        else:
+            x=block_bottleneck(x,filter_list)
+    return x
+tmp_list=[64,64,256]
+in_=Input(shape=(224,224,3))
+block_bottleneck(in_,tmp_list,1)
+
+class ResNet50():
+    def __init__(self):
+        in_=Input(shape=(224,224,3))
+
+        # Layer 1:
+        self.model=Conv2D(64,(7,7),strides=(2,2),padding="SAME")(in_)
+        self.model=BatchNormalization()(self.model)
+        self.model=Activation("relu")(self.model)
+        self.model = MaxPool2D((3, 3), (2, 2),padding="VALID")(self.model)
+        print(self.model.get_shape())
+
+        # Layer 2:
+        self.model=residual_layer(self.model,2,[64,64,256],3)
+
+        # Layer 3:
+        self.model = residual_layer(self.model, 2, [128, 128, 512], 4)
+
+        # Layer 4:
+        self.model = residual_layer(self.model, 2, [256, 256, 1024], 6)
+
+        # Layer 5:
+        self.model = residual_layer(self.model, 1, [512, 512, 2048], 3)
+
+        self.model=AveragePooling2D(pool_size=(7,7))(self.model)
+
+        self.model=Flatten()(self.model)
+
+        self.model=Dense(1000,activation="softmax")(self.model)
+
+        self.model=Model(inputs=in_,outputs=self.model)
+        self.model.summary()
+    def train(self):
+        self.optimizer=SGD()
+        # self.loss_function=binary_crossentropy(y_true=self.model)
+
+        # Train model:
+        self.model.compile(optimizer=self.optimizer,loss="binary_crossentropy")
+
+        # Load weights:
+        self.model.load_weights(weight_path)
+
+model=ResNet50()
 model.train()
-print( class_names[np.argmax(model.model.predict(im))])
+print(class_names[np.argmax(model.model.predict(im))])
